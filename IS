@@ -1,0 +1,52 @@
+import pandas as pd
+import numpy as np
+data=pd.read_excel('data.xlsx', sheet_name='Data', encoding='latin-1')
+data.describe(include='all')
+data['P&L AMOUNT2']=data['P&L AMOUNT'].fillna(0)
+pd.to_numeric(data['P&L AMOUNT'],downcast='float')
+data['month']= pd.DatetimeIndex(data['Date']).month
+look_up = {1: '1.Jan', 2: '2.Feb', 3: '3.Mar', 4: '4.Apr', 5: '5.May',
+            6: '6.Jun', 7: '7.Jul', 8: '8.Aug', 9: '9.Sep', 10: '10.Oct', 11: '11.Nov', 12: '12.Dec'}
+data['Mon'] = data['month'].apply(lambda x: look_up[x])
+data['Account2']=data['Account'].str[:5]
+data['Account2'] = pd.to_numeric(data['Account2'])
+acc_class = []
+for row in data['Account2']:
+    if row < 5000     :  acc_class.append('4.Revenue')
+    elif row < 6000   :  acc_class.append('5.Direct Cost')
+    elif row < 7000   :  acc_class.append('6.Overhead')
+    elif row < 9000   :  acc_class.append('8.Oprating Expenses')
+    elif row < 10000  :  acc_class.append('9.Other Income (Expenses)')
+data['acc_class']=acc_class
+pt=pd.pivot_table(data=data, values='P&L AMOUNT', index=['acc_class','Account'],columns=['Name','Mon'] , aggfunc=sum, fill_value=0, margins=True, margins_name='Total')
+index = pd.MultiIndex.from_tuples(pt.index)
+set([i[0] for i in pt.columns ])
+columns_first_index_with_total = set([i[0] for i in pt.columns ])
+columns_first_index = [i[0] for i in pt.columns if i[0] != 'Total']
+unique_top_index_column = set(columns_first_index)
+for selected_columns in unique_top_index_column:
+    pt[selected_columns, 'YTD'] = pt[selected_columns].sum(1)
+pt= pt[columns_first_index_with_total]
+row_index = [i[0] for i in pt.index if i[0]!= 'Total']
+unique_row_index = set(row_index)
+for ind in unique_row_index:
+    #pdb.set_trace()
+    res = pt.loc[ind].sum(0)
+    new_index = 'Total ' + ind[2:]
+    res = res.append(pd.Series([ind,new_index], index=['acc_class','Account']))
+    pt = pd.concat([pt, res.to_frame().T.set_index(['acc_class','Account'])]
+direct_cost=pt.loc['5.Direct Cost','Total Direct Cost']
+Overhead=pt.loc['6.Overhead','Total Overhead']
+Revenue=pt.loc['4.Revenue','Total Revenue']
+Operating_Expenses=pt.loc["8.Oprating Expenses",'Total Oprating Expenses']
+Other_Income_Expenses=pt.loc['9.Other Income (Expenses)','Total Other Income (Expenses)']
+COGS= direct_cost + Overhead
+Gross_Profit=Revenue-COGS
+Operation_Income=Gross_Profit-Operating_Expenses
+Net_Income=Operation_Income+Other_Income_Expenses
+pt.loc[('6.Overhead','Total Cost of Goods Sold'),:]=COGS
+pt.loc[('6.Overhead','Gross_Profit'),:]=Gross_Profit
+pt.loc[('8.Oprating Expenses','Income From Operations'),:]=Operation_Income
+pt.loc[('9.Other Income (Expenses)','Net Income'),:]=Net_Income
+pt = pt.sort_index()
+pt.to_excel('results.xlsx')
